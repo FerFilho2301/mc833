@@ -1,12 +1,12 @@
 # MC833 - Programação em Redes de Computadores
 
-###Como iniciar o servidor:
+### Como iniciar o servidor:
 
 gcc music_server.c -Wall -o servidor 
 
 ./servidor
 
-###Instanciar um cliente:
+### Instanciar um cliente:
 
 gcc music_client.c -Wall -o cliente 
 
