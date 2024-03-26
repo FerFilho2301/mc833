@@ -1,29 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <string.h>
-#include <netdb.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <time.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-
-#define LISTENQ 10
-#define MAXDATASIZE 3000
-#define MAX_MUSICAS 300
-#define CLI_STRING "Cliente, escolha uma string:"
-#define CLI_INT "Cliente, escolha um int:"
-
-typedef struct Musica {
-    int id;
-    char titulo[100];
-    char interprete[100];
-    char idioma[50];
-    char genero[50];
-    int ano;
-} Musica;
+#include "music_server.h"
 
 // Opções selecionáveis pelo menu:
 void cadastrar_musica(Musica *musicas, int *num_musicas, int sockfd) {
@@ -71,6 +46,33 @@ void cadastrar_musica(Musica *musicas, int *num_musicas, int sockfd) {
     (*num_musicas)++;
 
     printf("Música cadastrada com sucesso.\n");
+
+    // Escreve as informações da música em um arquivo de texto
+    // Cria um nome de arquivo baseado no ID da música
+    char nomeArquivo[100];
+    sprintf(nomeArquivo, "server/data/%d.txt", nova_musica.id);
+    
+    FILE *arquivo = fopen(nomeArquivo, "w");
+
+    // Verifica se o arquivo foi aberto com sucesso
+    if (arquivo == NULL) {
+        printf("Erro ao armazenar música em arquivo.\n");
+        return;
+    }else
+    {
+        // Escreve os dados da música no arquivo
+        fprintf(arquivo, "ID: %d\n", nova_musica.id);
+        fprintf(arquivo, "Título: %s\n", nova_musica.titulo);
+        fprintf(arquivo, "Intérprete: %s\n", nova_musica.interprete);
+        fprintf(arquivo, "Idioma: %s\n", nova_musica.idioma);
+        fprintf(arquivo, "Gênero: %s\n", nova_musica.genero);
+        fprintf(arquivo, "Ano: %d\n", nova_musica.ano);
+        
+        fclose(arquivo);
+
+        printf("Música salva em: %s\n",nomeArquivo);
+    }
+    
     // Envia uma confirmação para o cliente
     char confirmacao[] = "Música cadastrada com sucesso.\n";
     write(sockfd, confirmacao, sizeof(confirmacao));
@@ -109,7 +111,7 @@ void remover_musica(Musica *musicas, int *num_musicas, int sockfd) {
     // Se a música foi encontrada, envia uma confirmação para o cliente
     if (encontrado) {
         char confirmacao[150];
-        snprintf(confirmacao, sizeof(confirmacao), "Música %s removida com sucesso.\n", nome_musica);
+        snprintf(confirmacao, sizeof(confirmacao), "Música '%s' removida com sucesso.\n", nome_musica);
         write(sockfd, confirmacao, strlen(confirmacao));
     } else {
         char erro[] = "Música com o identificador informado não encontrada.\n";
