@@ -12,6 +12,9 @@
 #include <time.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <dirent.h>
+#include <sys/stat.h>
+
 
 #define LISTENQ 10
 #define MAXDATASIZE 3000

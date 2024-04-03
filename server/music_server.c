@@ -1,5 +1,58 @@
 #include "music_server.h"
 
+void carregar_musicas(Musica *musicas, int *num_musicas) {
+    DIR *dirpath;
+    struct dirent *entry;
+    FILE *arquivo;
+    char nomeArquivo[MAXDATASIZE];
+    struct stat file_stat;
+    int loaded = 0; // Variável para controlar se alguma música foi carregada
+
+    
+    // Abre o diretório "data"
+    if ((dirpath = opendir("server/data")) != NULL) {
+                
+        // Itera sobre todos os arquivos no diretório
+        while ((entry = readdir(dirpath)) != NULL) {
+
+            sprintf(nomeArquivo, "server/data/%s", entry->d_name);
+
+            if (stat(nomeArquivo, &file_stat) == 0 && S_ISREG(file_stat.st_mode)) {
+
+                arquivo = fopen(nomeArquivo, "r");
+                if (arquivo != NULL) {
+                    // Lê as informações da música do arquivo
+                    Musica nova_musica;
+                    fscanf(arquivo, "ID: %d\n", &nova_musica.id);
+                    fscanf(arquivo, "Título: %[^\n]\n", nova_musica.titulo);
+                    fscanf(arquivo, "Intérprete: %[^\n]\n", nova_musica.interprete);
+                    fscanf(arquivo, "Idioma: %[^\n]\n", nova_musica.idioma);
+                    fscanf(arquivo, "Gênero: %[^\n]\n", nova_musica.genero);
+                    fscanf(arquivo, "Ano: %d\n", &nova_musica.ano);
+                    fscanf(arquivo, "Refrão: %[^\n]\n", nova_musica.refrao);
+
+                    // Adiciona a música ao array de músicas
+                    musicas[*num_musicas] = nova_musica;
+                    (*num_musicas)++;
+
+                    loaded++;
+
+                    // Fecha o arquivo
+                    fclose(arquivo);
+                }
+            }
+        }
+
+        // Fecha o diretório
+        closedir(dirpath);
+
+        printf("Músicas carregadas do banco de dados: %d\n", loaded);        
+    } else {
+        // Se houver erro ao abrir o diretório, exibe uma mensagem de erro
+        perror("Erro ao abrir o diretório 'data'");
+    }
+}
+
 // Opções selecionáveis pelo menu:
 void cadastrar_musica(Musica *musicas, int *num_musicas, int sockfd) {
     Musica nova_musica;
@@ -379,6 +432,9 @@ int main (int argc, char **argv) {
     struct Musica musicas[MAX_MUSICAS];
     int num_musicas = 0;
     char menu[] = "\n\n===MUSIC SERVER===\n 1. Cadastre uma nova música\n 2. Delete uma música\n 3. Liste as musicas por ano\n 4. Liste as músicas por idioma e ano\n 5. Liste as músicas por gênero\n 6. Liste todas as músicas\n 7. Veja os dados de uma música\n 8. Veja os dados de todas as músicas\n 9. Baixe uma música (Próxima versão)\n q. Fechar\n\nEscolha uma opção:\n";
+
+    // Carrega as músicas disponíveis ao iniciar o servidor
+    carregar_musicas(musicas, &num_musicas);
 
     if ((listenfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         perror("socket");
