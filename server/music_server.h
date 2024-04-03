@@ -26,6 +26,7 @@ typedef struct Musica {
     char idioma[50];
     char genero[50];
     int ano;
+    char refrao[MAXDATASIZE];
 } Musica;
 
 #endif /* SERVER_H */

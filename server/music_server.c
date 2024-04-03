@@ -30,6 +30,11 @@ void cadastrar_musica(Musica *musicas, int *num_musicas, int sockfd) {
     write(sockfd, CLI_INT, strlen(CLI_INT));
     read(sockfd, &nova_musica.ano, sizeof(nova_musica.ano));
 
+    write(sockfd, "Informe o refrão da música: ", strlen("Informe o refrão da música: "));
+    sleep(1);
+    write(sockfd, CLI_STRING, strlen(CLI_STRING));
+    read(sockfd, nova_musica.refrao, sizeof(nova_musica.refrao));
+
     // Verifica se há espaço disponível para mais músicas
     if (*num_musicas >= MAX_MUSICAS) {
         printf("Não é possível cadastrar mais músicas. Limite alcançado.\n");
@@ -67,6 +72,7 @@ void cadastrar_musica(Musica *musicas, int *num_musicas, int sockfd) {
         fprintf(arquivo, "Idioma: %s\n", nova_musica.idioma);
         fprintf(arquivo, "Gênero: %s\n", nova_musica.genero);
         fprintf(arquivo, "Ano: %d\n", nova_musica.ano);
+        fprintf(arquivo, "Refrão: %s\n", nova_musica.refrao);
         
         fclose(arquivo);
 
@@ -74,7 +80,8 @@ void cadastrar_musica(Musica *musicas, int *num_musicas, int sockfd) {
     }
     
     // Envia uma confirmação para o cliente
-    char confirmacao[] = "Música cadastrada com sucesso.\n";
+    char confirmacao[150];
+    sprintf(confirmacao, "Música cadastrada com sucesso! Seu ID = %d\n", nova_musica.id);
     write(sockfd, confirmacao, sizeof(confirmacao));
     sleep(1);
 }
