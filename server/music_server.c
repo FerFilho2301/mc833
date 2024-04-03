@@ -120,6 +120,16 @@ void remover_musica(Musica *musicas, int *num_musicas, int sockfd) {
         char confirmacao[150];
         snprintf(confirmacao, sizeof(confirmacao), "Música '%s' removida com sucesso.\n", nome_musica);
         write(sockfd, confirmacao, strlen(confirmacao));
+
+        // Remove o arquivo de texto associado à música
+        char nomeArquivo[100];
+        sprintf(nomeArquivo, "server/data/%d.txt", id);
+        if (unlink(nomeArquivo) == -1) {
+            perror("Erro ao excluir o arquivo de música");
+        }
+
+        printf("Música server/data/%d.txt removida com sucesso.\n", id);
+
     } else {
         char erro[] = "Música com o identificador informado não encontrada.\n";
         write(sockfd, erro, sizeof(erro));
