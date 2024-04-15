@@ -14,6 +14,7 @@
 #include <arpa/inet.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <pthread.h>
 
 
 #define LISTENQ 10

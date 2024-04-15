@@ -1,5 +1,8 @@
 #include "music_server.h"
 
+Musica musicas[MAX_MUSICAS];
+int num_musicas = 0;
+
 void carregar_musicas(Musica *musicas, int *num_musicas) {
     DIR *dirpath;
     struct dirent *entry;
@@ -311,9 +314,9 @@ void listar_info_por_id(Musica *musicas, int num_musicas, int sockfd) {
 
             // Monta a mensagem com as informações da música
             char resposta[MAXDATASIZE];
-            snprintf(resposta, sizeof(resposta), "ID: %d, Título: %s, Artista: %s, Ano: %d, Idioma: %s, Gênero: %s\n",
+            snprintf(resposta, sizeof(resposta), "ID: %d, Título: %s, Artista: %s, Ano: %d, Idioma: %s, Gênero: %s, Refrão: %s\n",
                    musicas[i].id, musicas[i].titulo, musicas[i].interprete, musicas[i].ano,
-                   musicas[i].idioma, musicas[i].genero);
+                   musicas[i].idioma, musicas[i].genero, musicas[i].refrao);
 
             // Envia a resposta para o cliente
             write(sockfd, resposta, strlen(resposta));
@@ -335,9 +338,9 @@ void listar_todas_info(Musica *musicas, int num_musicas, int sockfd) {
 
     // Monta a mensagem com todas as músicas cadastradas
     for (int i = 0; i < num_musicas; i++) {
-        offset += snprintf(resposta + offset, sizeof(resposta) - offset, "ID: %d, Título: %s, Artista: %s, Ano: %d, Idioma: %s, Gênero: %s\n",
+        offset += snprintf(resposta + offset, sizeof(resposta) - offset, "ID: %d, Título: %s, Artista: %s, Ano: %d, Idioma: %s, Gênero: %s, Refrão: %s\n",
                    musicas[i].id, musicas[i].titulo, musicas[i].interprete, musicas[i].ano,
-                   musicas[i].idioma, musicas[i].genero);
+                   musicas[i].idioma, musicas[i].genero, musicas[i].refrao);
     }
 
     if (offset == 0){
@@ -423,72 +426,86 @@ void handle_client_choice(int sockfd, char choice, Musica *musicas, int *num_mus
     }sleep(1);
 }
 
-int main (int argc, char **argv) {
-    int    listenfd, connfd;
-    struct sockaddr_in servaddr;
-    char   buf[MAXDATASIZE];
-    //time_t ticks;
-
-    struct Musica musicas[MAX_MUSICAS];
-    int num_musicas = 0;
+// Função executada por cada thread para cada cliente
+void *client_handler(void *socket_desc) {
+    // Extrai o socket
+    int connfd = *(int*)socket_desc;
+    free(socket_desc);
+    char buf[MAXDATASIZE];  // Buffer para armazenar os dados recebidos do cliente
+    // Menu que será enviado ao cliente
     char menu[] = "\n\n===MUSIC SERVER===\n 1. Cadastre uma nova música\n 2. Delete uma música\n 3. Liste as musicas por ano\n 4. Liste as músicas por idioma e ano\n 5. Liste as músicas por gênero\n 6. Liste todas as músicas\n 7. Veja os dados de uma música\n 8. Veja os dados de todas as músicas\n 9. Baixe uma música (Próxima versão)\n q. Fechar\n\nEscolha uma opção:\n";
 
-    // Carrega as músicas disponíveis ao iniciar o servidor
-    carregar_musicas(musicas, &num_musicas);
+    // Envia o menu ao cliente
+    send_menu(connfd, menu);
 
+    // Lê os dados do cliente enquanto houver dados a serem lidos
+    while (read(connfd, buf, sizeof(buf)) > 0) {
+        // Processa a escolha do clinte
+        handle_client_choice(connfd, buf[0], musicas, &num_musicas);
+        // Reenvia o menu ao cliente
+        send_menu(connfd, menu);
+    }
+
+    // Quando termina a interação, o socket é fechado
+    close(connfd);
+    return NULL;
+}
+
+int main(void) {
+    int listenfd, connfd;  // Socket para o servidor e para o cliente.
+    struct sockaddr_in servaddr;
+    pthread_t thread_id;  // ID de thread para as threads de tratamento de cliente
+
+    // Socket para o servidor
     if ((listenfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         perror("socket");
         exit(1);
     }
 
+    // Configura o endereço do servidor para aceitar conexões em qualquer endereço IP do servidor
     bzero(&servaddr, sizeof(servaddr));
     servaddr.sin_family      = AF_INET;
     servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
     servaddr.sin_port        = htons(0);
 
+    // Associa o socket à porta e ao endereço especificados acima
     if (bind(listenfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) == -1) {
         perror("bind");
         exit(1);
     }
 
-    // Obtendo a porta dinâmica
-    struct sockaddr_in dynamicAddr;
-    socklen_t addrLen = sizeof(dynamicAddr);
-    getsockname(listenfd, (struct sockaddr*)&dynamicAddr, &addrLen);
-    printf("Servidor escutando na porta: %d\n", ntohs(dynamicAddr.sin_port));
-
-
+    // Inicia a escuta de conexões no socket
     if (listen(listenfd, LISTENQ) == -1) {
         perror("listen");
         exit(1);
     }
 
-    for ( ; ; ) {
-      if ((connfd = accept(listenfd, (struct sockaddr *) NULL, NULL)) == -1 ) {
-        perror("accept");
-        exit(1);
-        }
-
-        struct sockaddr_in remoteAddr;
-        socklen_t addrLen = sizeof(remoteAddr);
-        getpeername(connfd, (struct sockaddr*)&remoteAddr, &addrLen);
-        printf("Remote IP: %s\nRemote Port: %d\n", inet_ntoa(remoteAddr.sin_addr), ntohs(remoteAddr.sin_port));
-
-        // Enviar menu inicial de opções ao cliente
-        send_menu(connfd, &menu[0]);
-
-        // Receber escolha do cliente
-        while (read(connfd, buf, sizeof(buf)) > 0) {
-            handle_client_choice(connfd, buf[0], musicas, &num_musicas);
-            sleep(1);
-            send_menu(connfd, &menu[0]);  // Envia o menu novamente após lidar com a escolha do cliente
-        }
-
-        // Se o cliente fechar a conexão, sai do loop
-        if (errno == ECONNRESET) {
-            close(connfd);
-            break;
-        }
+    // Recupera e exibe a porta na qual o servidor está ouvindo
+    struct sockaddr_in sin;
+    socklen_t len = sizeof(sin);
+    if (getsockname(listenfd, (struct sockaddr *)&sin, &len) == -1) {
+        perror("getsockname");
+    } else {
+        printf("Listening on port %d\n", ntohs(sin.sin_port));
     }
-    return(0);
+
+    // Loop principal para aceitar conexões de clientes
+    while (1) {
+        if ((connfd = accept(listenfd, (struct sockaddr*)NULL, NULL)) == -1) {
+            perror("accept");
+            continue;  // Continua o loop se houver erro ao aceitar a conexão
+        }
+
+        // Aloca memória para o socket do cliente
+        int *new_sock = malloc(sizeof(int));
+        *new_sock = connfd;
+
+        // Cria uma thread para cada cliente conectado
+        if (pthread_create(&thread_id, NULL, client_handler, (void*) new_sock) != 0) {
+            perror("pthread_create");
+        }
+        pthread_detach(thread_id);  // Permite que a thread seja liberada automaticamente ao terminar
+    }
+
+    return 0;
 }
