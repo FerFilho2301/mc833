@@ -456,6 +456,9 @@ int main(void) {
     struct sockaddr_in servaddr;
     pthread_t thread_id;  // ID de thread para as threads de tratamento de cliente
 
+    // Carrega as músicas do diretório "data"
+    carregar_musicas(musicas, &num_musicas);
+
     // Socket para o servidor
     if ((listenfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         perror("socket");
