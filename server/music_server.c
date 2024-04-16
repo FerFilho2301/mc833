@@ -312,14 +312,29 @@ void listar_info_por_id(Musica *musicas, int num_musicas, int sockfd) {
         if (musicas[i].id == id) {
             encontrado = 1;
 
-            // Monta a mensagem com as informações da música
-            char resposta[MAXDATASIZE];
-            snprintf(resposta, sizeof(resposta), "ID: %d, Título: %s, Artista: %s, Ano: %d, Idioma: %s, Gênero: %s, Refrão: %s\n",
-                   musicas[i].id, musicas[i].titulo, musicas[i].interprete, musicas[i].ano,
-                   musicas[i].idioma, musicas[i].genero, musicas[i].refrao);
+            // Calcula o tamanho necessário para a string formatada
+            int tamanho = snprintf(NULL, 0, "ID: %d, Título: %s, Artista: %s, Ano: %d, Idioma: %s, Gênero: %s, Refrão: %s\n",
+                                    musicas[i].id, musicas[i].titulo, musicas[i].interprete, musicas[i].ano,
+                                    musicas[i].idioma, musicas[i].genero, musicas[i].refrao);
+            
+            // Aloca dinamicamente o buffer com o tamanho calculado
+            char *resposta = malloc(tamanho + 1); // +1 para o caractere nulo de terminação
+
+            if (resposta == NULL) {
+                perror("Erro ao alocar memória para resposta");
+                return;
+            }
+
+            // Formata a string no buffer alocado dinamicamente
+            snprintf(resposta, tamanho + 1, "ID: %d, Título: %s, Artista: %s, Ano: %d, Idioma: %s, Gênero: %s, Refrão: %s\n",
+                     musicas[i].id, musicas[i].titulo, musicas[i].interprete, musicas[i].ano,
+                     musicas[i].idioma, musicas[i].genero, musicas[i].refrao);
 
             // Envia a resposta para o cliente
             write(sockfd, resposta, strlen(resposta));
+
+            // Libera a memória alocada dinamicamente
+            free(resposta);
 
             break;
         }
