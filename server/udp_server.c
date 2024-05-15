@@ -5,44 +5,9 @@
 #include <arpa/inet.h>
 
 #define PORT 8080 
-#define MAXDATASIZE 64
+#define MAXDATASIZE 2048
 #define sendrecvflag 0 
-#define nofile "File Not Found!" 
-#define cipherKey 'S' 
-
-void clearBuffer(char* b) {
-        int i; 
-        for (i = 0; i < MAXDATASIZE; i++) 
-                b[i] = '\0'; 
-} 
-  
-// function to encrypt 
-char Cipher(char ch) { 
-        return ch ^ cipherKey; 
-} 
-  
-// function sending file 
-int sendFile(FILE* fp, char* buf, int s) { 
-        int i, len; 
-        if (fp == NULL) { 
-                strcpy(buf, nofile); 
-                len = strlen(nofile); 
-                buf[len] = EOF; 
-                for (i = 0; i <= len; i++) 
-                        buf[i] = Cipher(buf[i]); 
-                return 1; 
-        } 
-  
-        char ch, ch2; 
-        for (i = 0; i < s; i++) { 
-                ch = fgetc(fp); 
-                ch2 = Cipher(ch); 
-                buf[i] = ch2; 
-                if (ch == EOF) 
-                        return 1; 
-        } 
-    return 0; 
-}
+#define EOF_MESSAGE "EOF"
 
 int main() {
 
@@ -77,41 +42,34 @@ int main() {
         {
                 printf("Waiting for file name...\n"); 
         
-                clearBuffer(buffer);
-
                 nBytes = recvfrom(sockfd, buffer, 
-                                MAXDATASIZE, sendrecvflag, 
+                                sizeof(buffer), sendrecvflag, 
                                 (struct sockaddr*)&servaddr, &servaddrLen);
 
                 printf("\nFile Name Received: %s\n", buffer); 
 
                 sprintf(filePath, "server/data/%s", buffer); // Constructing file path
-                file = fopen(filePath, "r"); 
+                file = fopen(filePath, "rb"); 
 
                 if (file == NULL) 
                         printf("\nFile open failed!\n"); 
                 else
                         printf("\nFile Successfully opened!\n");
 
-                while (1)
-                {
-                        // process 
-                        if (sendFile(file, buffer, MAXDATASIZE)) { 
-                                sendto(sockfd, buffer, MAXDATASIZE, 
-                                sendrecvflag,  
-                                (struct sockaddr*)&servaddr, servaddrLen); 
-                                break; 
-                        } 
                 
-                        // send 
-                        sendto(sockfd, buffer, MAXDATASIZE, 
-                                sendrecvflag, 
-                                (struct sockaddr*)&servaddr, servaddrLen); 
-                        clearBuffer(buffer); 
+                int bytesRead;
+                while ((bytesRead = fread(buffer, 1, sizeof(buffer), file)) > 0)
+                {
+                        sendto(sockfd, buffer, bytesRead, 0, (struct sockaddr*)&servaddr, servaddrLen);
+                        printf("\nSending File...\n");
                 }
 
+                // Send EOF message
+                sendto(sockfd, EOF_MESSAGE, strlen(EOF_MESSAGE) + 1, 0, (struct sockaddr*)&servaddr, servaddrLen);
                 if (file != NULL) 
                         fclose(file);
+
+                printf("\nDownload Complete...\n");
         }
 
    return 0;

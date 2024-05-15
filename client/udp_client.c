@@ -5,39 +5,13 @@
 #include <arpa/inet.h>
 
 #define PORT 8080 
-#define MAXDATASIZE 64
+#define MAXDATASIZE 2048
 #define sendrecvflag 0 
-#define nofile "File Not Found!" 
-#define cipherKey 'S' 
-
-void clearBuffer(char* b) {
-    int i; 
-    for (i = 0; i < MAXDATASIZE; i++) 
-        b[i] = '\0'; 
-} 
-  
-// function to encrypt 
-char Cipher(char ch) { 
-    return ch ^ cipherKey; 
-} 
-
-int recvFile(FILE* file, char* buf, int s) 
-{ 
-    int i; 
-    char ch; 
-    for (i = 0; i < s; i++) { 
-        ch = buf[i]; 
-        ch = Cipher(ch); 
-        if (ch == EOF) 
-            return 1; 
-        fwrite(&ch, sizeof(char), 1, file); // Write encrypted character to file
-    }
-    return 0; 
-}  
+#define EOF_MESSAGE "EOF"
 
 int main() {
 
-    int sockfd, nBytes;  // Socket para o servidor e para o cliente.
+    int sockfd, bytesRead;  // Socket para o servidor e para o cliente.
     struct sockaddr_in servaddr;
     int servaddrLen = sizeof(servaddr); 
     FILE* file;
@@ -69,24 +43,18 @@ int main() {
             break;
         }
 
-        sendto(sockfd, buffer, MAXDATASIZE, 
-               sendrecvflag, (struct sockaddr*)&servaddr, 
-               servaddrLen);
+        sendto(sockfd, buffer, sizeof(buffer), sendrecvflag, (struct sockaddr*)&servaddr, servaddrLen);
 
-        while (1) { 
-            // receive 
-            clearBuffer(buffer); 
-            nBytes = recvfrom(sockfd, buffer, MAXDATASIZE, 
-                              sendrecvflag, (struct sockaddr*)&servaddr, 
-                              &servaddrLen); 
-  
-            // process 
-            if (recvFile(file, buffer, MAXDATASIZE)) { 
-                break; 
-            } 
-        } 
+        // receive  
+        while ((bytesRead = recvfrom(sockfd, buffer, sizeof(buffer), sendrecvflag, (struct sockaddr*)&servaddr, &servaddrLen)) > 0 && strcmp(buffer, EOF_MESSAGE) != 0)
+        {
+            fwrite(buffer, 1, bytesRead, file);
+            printf("\nDownloading File...\n");
+        }
 
-        fclose(file);
+        if (file != NULL) 
+            fclose(file);
+            
         printf("\nDownload complete\n");
     }
     
