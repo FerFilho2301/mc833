@@ -3,6 +3,185 @@
 Musica musicas[MAX_MUSICAS];
 int num_musicas = 0;
 
+#define UDP_PORT 8080
+
+//Caminho inverso para envio de músicas
+void receive_udp_file(const char* local_filename) {
+    int udp_sockfd;
+    struct sockaddr_in servaddr;
+    char buffer[MAXDATASIZE];
+    ssize_t bytesRead;
+
+    // Create a UDP socket
+    udp_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (udp_sockfd < 0) {
+        perror("Não foi possível criar o socket.");
+        return;
+    }
+
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    servaddr.sin_port = htons(UDP_PORT);
+
+    if (bind(udp_sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
+        perror("Bind falhou.");
+        close(udp_sockfd);
+        return;
+    }
+
+    FILE *file = fopen(local_filename, "wb");
+    if (file == NULL) {
+        perror("Abrir o arquivo falhou.");
+        close(udp_sockfd);
+        return;
+    }
+
+    Packet packets[MAX_PACKETS];
+    memset(packets, 0, sizeof(packets));
+    int expected_seq_num = 0;
+
+    // Setup for select
+    fd_set readfds;
+    struct timeval tv;
+
+    while (1) {
+        FD_ZERO(&readfds);
+        FD_SET(udp_sockfd, &readfds);
+
+        tv.tv_sec = TIMEOUT_SEC;
+        tv.tv_usec = 0;
+
+        // Wait for data or a timeout
+        int rv = select(udp_sockfd + 1, &readfds, NULL, NULL, &tv);
+        if (rv == -1) {
+            perror("select error");
+            break;
+        } else if (rv == 0) {
+            printf("Download concluído!\n");
+            break; // Timeout occurred, break the loop
+        }
+
+        bytesRead = recvfrom(udp_sockfd, buffer, MAXDATASIZE, 0, NULL, NULL);
+        if (bytesRead <= 0) break; // Exit loop if error or no data
+
+        int received_seq_num;
+        memcpy(&received_seq_num, buffer, sizeof(int));
+
+        if (bytesRead == sizeof(int) + strlen(EOF_MESSAGE) + 1 && strncmp(buffer + sizeof(int), EOF_MESSAGE, strlen(EOF_MESSAGE) + 1) == 0) {
+            break; // Check for EOF message
+        }
+
+        // Check if the packet is the expected sequence number
+        if (received_seq_num == expected_seq_num) {
+            fwrite(buffer + sizeof(int), 1, bytesRead - sizeof(int), file); // Write the data part
+            expected_seq_num++;
+
+            // Check buffer for the next expected packets
+            while (packets[expected_seq_num % MAX_PACKETS].length != 0) {
+                Packet *pkt = &packets[expected_seq_num % MAX_PACKETS];
+                fwrite(pkt->data, 1, pkt->length, file);
+                pkt->length = 0; // Mark as read
+                expected_seq_num++;
+            }
+        } else if (received_seq_num > expected_seq_num && received_seq_num - expected_seq_num < MAX_PACKETS) {
+            // Buffer the packet if it is within our expected range
+            Packet *pkt = &packets[received_seq_num % MAX_PACKETS];
+            memcpy(pkt->data, buffer + sizeof(int), bytesRead - sizeof(int));
+            pkt->seq_num = received_seq_num;
+            pkt->length = bytesRead - sizeof(int);
+        }
+    }
+
+    fclose(file);
+    close(udp_sockfd);
+    printf("Música baixada com sucesso.\n");
+}
+
+void send_file_udp(const char* filename, struct sockaddr_in cliaddr) {
+    int udp_sockfd;
+    char buffer[MAXDATASIZE];
+    FILE *file;
+    struct stat file_stat;
+    off_t total_sent = 0;
+    double progress = 0.0;
+    int sequence_number = 0;  // Sequence number initialization
+
+    // Create UDP socket
+    if ((udp_sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        perror("Criação do socket UDP falhou.");
+        return;
+    }
+
+    // Open the file
+    file = fopen(filename, "rb");
+    if (file == NULL) {
+        perror("Abrir o arquivo falhou.");
+        close(udp_sockfd);
+        return;
+    }
+
+    // Get file size
+    if (stat(filename, &file_stat) != 0) {
+        perror("Pegar o tamanho do arquivo falhou.");
+        fclose(file);
+        close(udp_sockfd);
+        return;
+    }
+
+    long long file_size = file_stat.st_size;
+    int bytesRead;
+
+    // Adding sequence number to each packet
+    while ((bytesRead = fread(buffer + sizeof(int), 1, sizeof(buffer) - sizeof(int), file)) > 0) {
+        memcpy(buffer, &sequence_number, sizeof(int));  // Prepend sequence number
+        sendto(udp_sockfd, buffer, bytesRead + sizeof(int), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr));
+        sequence_number++;  // Increment sequence number
+        total_sent += bytesRead;
+        progress = (double)total_sent / file_size * 100.0;
+        printf("Enviado %ld de %lld bytes (%.2f%%), Seq Num: %d\n", total_sent, file_size, progress, sequence_number);
+    }
+
+    sleep(2);
+    // Send EOF message
+    sendto(udp_sockfd, EOF_MESSAGE, strlen(EOF_MESSAGE) + 1, 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr));
+    fclose(file);
+    close(udp_sockfd);
+}
+
+void handle_download(Musica *musicas, int num_musicas, int sockfd) {
+    int id;
+    char response[MAXDATASIZE];
+
+    write(sockfd, "Informe o ID da música a ser baixada: ", strlen("Informe o ID da música a ser baixada: "));
+    sleep(1);
+    write(sockfd, CLI_INT, strlen(CLI_INT));
+    read(sockfd, &id, sizeof(id));
+
+    for (int i = 0; i < num_musicas; i++) {
+        if (musicas[i].id == id) {
+            snprintf(response, sizeof(response), "Download iniciado para %s\n", musicas[i].titulo);
+            write(sockfd, response, strlen(response));
+            
+            struct sockaddr_in cliaddr;
+            memset(&cliaddr, 0, sizeof(cliaddr));
+            cliaddr.sin_family = AF_INET;
+            cliaddr.sin_addr.s_addr = inet_addr("127.0.0.1"); // Assuming client is on localhost for simplicity
+            cliaddr.sin_port = htons(UDP_PORT);
+
+            char filename[256];
+            snprintf(filename, sizeof(filename), "server/data/%s.mp3", musicas[i].titulo);
+            sleep(3);
+            send_file_udp(filename, cliaddr);
+            printf("sent file");
+            
+            return;
+        }
+    }
+    snprintf(response, sizeof(response), "Música não encontrada.\n");
+    write(sockfd, response, strlen(response));
+}
+
 void carregar_musicas(Musica *musicas, int *num_musicas) {
     DIR *dirpath;
     struct dirent *entry;
@@ -17,31 +196,32 @@ void carregar_musicas(Musica *musicas, int *num_musicas) {
                 
         // Itera sobre todos os arquivos no diretório
         while ((entry = readdir(dirpath)) != NULL) {
+            if (strstr(entry->d_name, ".txt") != NULL){
+                sprintf(nomeArquivo, "server/data/%s", entry->d_name);
 
-            sprintf(nomeArquivo, "server/data/%s", entry->d_name);
+                if (stat(nomeArquivo, &file_stat) == 0 && S_ISREG(file_stat.st_mode)) {
 
-            if (stat(nomeArquivo, &file_stat) == 0 && S_ISREG(file_stat.st_mode)) {
+                    arquivo = fopen(nomeArquivo, "r");
+                    if (arquivo != NULL) {
+                        // Lê as informações da música do arquivo
+                        Musica nova_musica;
+                        fscanf(arquivo, "ID: %d\n", &nova_musica.id);
+                        fscanf(arquivo, "Título: %[^\n]\n", nova_musica.titulo);
+                        fscanf(arquivo, "Intérprete: %[^\n]\n", nova_musica.interprete);
+                        fscanf(arquivo, "Idioma: %[^\n]\n", nova_musica.idioma);
+                        fscanf(arquivo, "Gênero: %[^\n]\n", nova_musica.genero);
+                        fscanf(arquivo, "Ano: %d\n", &nova_musica.ano);
+                        fscanf(arquivo, "Refrão: %[^\n]\n", nova_musica.refrao);
 
-                arquivo = fopen(nomeArquivo, "r");
-                if (arquivo != NULL) {
-                    // Lê as informações da música do arquivo
-                    Musica nova_musica;
-                    fscanf(arquivo, "ID: %d\n", &nova_musica.id);
-                    fscanf(arquivo, "Título: %[^\n]\n", nova_musica.titulo);
-                    fscanf(arquivo, "Intérprete: %[^\n]\n", nova_musica.interprete);
-                    fscanf(arquivo, "Idioma: %[^\n]\n", nova_musica.idioma);
-                    fscanf(arquivo, "Gênero: %[^\n]\n", nova_musica.genero);
-                    fscanf(arquivo, "Ano: %d\n", &nova_musica.ano);
-                    fscanf(arquivo, "Refrão: %[^\n]\n", nova_musica.refrao);
+                        // Adiciona a música ao array de músicas
+                        musicas[*num_musicas] = nova_musica;
+                        (*num_musicas)++;
 
-                    // Adiciona a música ao array de músicas
-                    musicas[*num_musicas] = nova_musica;
-                    (*num_musicas)++;
+                        loaded++;
 
-                    loaded++;
-
-                    // Fecha o arquivo
-                    fclose(arquivo);
+                        // Fecha o arquivo
+                        fclose(arquivo);
+                    }
                 }
             }
         }
@@ -134,11 +314,22 @@ void cadastrar_musica(Musica *musicas, int *num_musicas, int sockfd) {
 
         printf("Música salva em: %s\n",nomeArquivo);
     }
-    
-    // Envia uma confirmação para o cliente
-    char confirmacao[150];
-    sprintf(confirmacao, "Música cadastrada com sucesso! Seu ID = %d\n", nova_musica.id);
-    write(sockfd, confirmacao, sizeof(confirmacao));
+
+    write(sockfd, "Música cadastrada com sucesso! Deseja incluir um .mp3? (s/n): ", strlen("Música cadastrada com sucesso! Deseja incluir um .mp3? (s/n): "));
+    sleep(1);
+    write(sockfd, CLI_STRING, strlen(CLI_STRING));
+    sleep(1);
+    char incluirMP3;
+    read(sockfd, &incluirMP3, sizeof(incluirMP3));
+    sleep(1);
+    if (incluirMP3 == 's' || incluirMP3 == 'S') {
+        char mp3Filename[256];
+        sprintf(mp3Filename, "server/data/%s.mp3", nova_musica.titulo);
+        receive_udp_file(mp3Filename);
+        char message[512];
+        snprintf(message, sizeof(message), "Envie a música %s", nova_musica.titulo);
+        write(sockfd, message, strlen(message));
+    }
     sleep(1);
 }
 
@@ -427,6 +618,9 @@ void handle_client_choice(int sockfd, char choice, Musica *musicas, int *num_mus
             sleep(1);
             listar_todas_info(musicas, *num_musicas, sockfd);
             break;
+        case '9':
+            handle_download(musicas, *num_musicas, sockfd);
+            break;
         case 'q':
             snprintf(response, sizeof(response), "Você escolheu a opção quit.\n");
             write(sockfd, response, strlen(response));
@@ -448,7 +642,7 @@ void *client_handler(void *socket_desc) {
     free(socket_desc);
     char buf[MAXDATASIZE];  // Buffer para armazenar os dados recebidos do cliente
     // Menu que será enviado ao cliente
-    char menu[] = "\n\n===MUSIC SERVER===\n 1. Cadastre uma nova música\n 2. Delete uma música\n 3. Liste as musicas por ano\n 4. Liste as músicas por idioma e ano\n 5. Liste as músicas por gênero\n 6. Liste todas as músicas\n 7. Veja os dados de uma música\n 8. Veja os dados de todas as músicas\n 9. Baixe uma música (Próxima versão)\n q. Fechar\n\nEscolha uma opção:\n";
+    char menu[] = "\n\n===MUSIC SERVER===\n 1. Cadastre uma nova música\n 2. Delete uma música\n 3. Liste as musicas por ano\n 4. Liste as músicas por idioma e ano\n 5. Liste as músicas por gênero\n 6. Liste todas as músicas\n 7. Veja os dados de uma música\n 8. Veja os dados de todas as músicas\n 9. Baixe uma música\n q. Fechar\n\nEscolha uma opção:\n";
 
     // Envia o menu ao cliente
     send_menu(connfd, menu);

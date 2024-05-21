@@ -20,6 +20,9 @@
 #define LISTENQ 10
 #define MAXDATASIZE 3000
 #define MAX_MUSICAS 300
+#define EOF_MESSAGE "EOF" 
+#define TIMEOUT_SEC 4
+#define MAX_PACKETS 2000
 #define CLI_STRING "Cliente, escolha uma string:"
 #define CLI_INT "Cliente, escolha um int:"
 
@@ -32,5 +35,11 @@ typedef struct Musica {
     int ano;
     char refrao[MAXDATASIZE];
 } Musica;
+
+typedef struct {
+    int seq_num;
+    char data[MAXDATASIZE];
+    int length;
+} Packet;
 
 #endif /* SERVER_H */
