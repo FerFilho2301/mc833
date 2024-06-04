@@ -87,7 +87,24 @@ void interagir_com_servidor(int sockfd) {
             struct sockaddr_in cliaddr;
             memset(&cliaddr, 0, sizeof(cliaddr));
             cliaddr.sin_family = AF_INET;
-            cliaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+            
+            //======trecho modificado para especificação do IP do servidor UDP======
+            socklen_t cliaddr_len = sizeof(cliaddr);
+            // Obter o endereço do servidor
+            if (getpeername(sockfd, (struct sockaddr *)&cliaddr, &cliaddr_len) == -1) {
+                perror("getpeername");
+                return;
+            }
+            // Converter o endereço IP do servidor para string
+            char server_ip[INET_ADDRSTRLEN];
+            if (inet_ntop(AF_INET, &(cliaddr.sin_addr), server_ip, INET_ADDRSTRLEN) == NULL) {
+                perror("inet_ntop");
+                return;
+            }
+            printf("SERVER IP: %s\n", server_ip);
+            cliaddr.sin_addr.s_addr = inet_addr(server_ip);
+            //======================================================
+
             cliaddr.sin_port = htons(UDP_PORT);
 
             snprintf(filename, sizeof(filename), "client/data/%s.mp3", strstr(recvline, "Envie a música") + strlen("Envie a música") + 1);

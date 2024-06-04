@@ -71,7 +71,24 @@ void handle_download(Musica *musicas, int num_musicas, int sockfd) {
             struct sockaddr_in cliaddr;
             memset(&cliaddr, 0, sizeof(cliaddr));
             cliaddr.sin_family = AF_INET;
-            cliaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+            //======trecho modificado para extração do IP do cliente UDP======
+            socklen_t cliaddr_len = sizeof(cliaddr);
+            // Obter o endereço do cliente
+            if (getpeername(sockfd, (struct sockaddr *)&cliaddr, &cliaddr_len) == -1) {
+                perror("getpeername");
+                return;
+            }
+            // Converter o endereço IP do cliente para string
+            char client_ip[INET_ADDRSTRLEN];
+            if (inet_ntop(AF_INET, &(cliaddr.sin_addr), client_ip, INET_ADDRSTRLEN) == NULL) {
+                perror("inet_ntop");
+                return;
+            }
+            printf("CLIENT IP: %s\n", client_ip);
+            cliaddr.sin_addr.s_addr = inet_addr(client_ip);
+            //=====================================================================
+
             cliaddr.sin_port = htons(UDP_PORT);
 
             char filename[256];
